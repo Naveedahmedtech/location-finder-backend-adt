@@ -1,0 +1,46 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+  }
+  header, footer {
+    background-color: #f7f7f7;
+    padding: 1rem;
+  }
+  main {
+    padding: 1rem;
+  }
+  .flashes {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0;
+  }
+  .flashes li {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .flashes li.error {
+    background-color: #ffdddd;
+    border: 1px solid #ff0000;
+  }
+  h1 a {
+    text-decoration: none;
+    color: #333;
+  }
+  form div {
+    margin-bottom: 1rem;
+  }
+  input, select {
+    padding: 0.5rem;
+    width: 200px;
+  }
+  button {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+  @media (max-width: 600px) {
+    /* Responsive adjustments */
+    input, select {
+      width: 100%;
+    }
+  }
+  
