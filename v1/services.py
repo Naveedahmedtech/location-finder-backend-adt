@@ -47,7 +47,6 @@ def get_route_data(origin_coords, destination_coords):
         }
         url = f"{base_url}/{loc_string}"
         response = requests.get(url, params=params, timeout=10)
-        print(response.url)
         if response.status_code != 200:
             return None
         
