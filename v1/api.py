@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from v1.services import geocode_address, get_route_data, convert_distance, get_air_distance, estimate_flight_time
 
-api_blueprint = Blueprint("api_v1", __name__)
+api_blueprint = Blueprint("api/v1", __name__)
 
 @api_blueprint.route("/health", methods=["GET"])
 def health():
