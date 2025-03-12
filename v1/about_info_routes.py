@@ -9,11 +9,13 @@ from v1.about_info_services import (MultiLanguageAboutInfo,
     update_about_info_by_language_and_id
 )
 from db import about_info_collection
+from v1.auth_services import jwt_required
 
 about_bp = Blueprint("about", __name__)
 
 # POST endpoint to create/update About-info in bulk
 @about_bp.route("/create-about-info", methods=["POST"])
+@jwt_required
 def create_about_info_endpoint():
     """
     Expects a JSON body with the following structure:
@@ -54,6 +56,7 @@ def create_about_info_endpoint():
 
 # GET endpoint for a specific language
 @about_bp.route("/about-info/<language>", methods=["GET"])
+@jwt_required
 def get_about_info_by_language(language):
     doc = get_about_info_by_lang(about_info_collection, language)
     if doc:
@@ -63,6 +66,7 @@ def get_about_info_by_language(language):
 
 # GET endpoint to fetch all About-info entries
 @about_bp.route("/about-info", methods=["GET"])
+@jwt_required
 def get_all_about_info_endpoint():
     docs = get_all_about_info(about_info_collection)
     # Optionally, transform list into a languages dict
@@ -79,6 +83,7 @@ def get_all_about_info_endpoint():
 
 # PUT endpoint to update an About-info document for a specific language
 @about_bp.route("/update-about-info/<language>", methods=["PUT"])
+@jwt_required
 def update_about_info_endpoint(language):
     """
     Updates an existing About-info document for a specific language.
@@ -98,6 +103,7 @@ def update_about_info_endpoint(language):
         return jsonify({"error": "Not found"}), 404
 
 @about_bp.route("/update-about-info/<language>/<doc_id>", methods=["PUT"])
+@jwt_required
 def update_about_info_by_language_and_id_endpoint(language, doc_id):
     """
     Updates an existing About-info document for a specific language and _id.

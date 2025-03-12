@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from v1.auth_services import jwt_required
 from v1.services import geocode_address, get_route_data, convert_distance, get_air_distance, estimate_flight_time
 
 api_blueprint = Blueprint("api/v1", __name__)
@@ -11,6 +12,7 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 @api_blueprint.route("/driving", methods=["POST"])
+@jwt_required
 def driving():
     """
     POST /api/v1/driving
@@ -182,6 +184,7 @@ def driving():
 
 
 @api_blueprint.route("/flight", methods=["POST"])
+@jwt_required
 def compute_air_distance():
     """
     POST /api/v1/air-distance

@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
+from v1.auth_services import jwt_required
 from v1.privacy_policy_services import (MultiLanguagePrivacyPolicy,
     create_privacy_policy,
     get_privacy_policy_by_lang,
@@ -13,6 +14,7 @@ privacy_bp = Blueprint("privacy", __name__)
 
 # POST endpoint: Bulk create Privacy Policy texts for multiple languages
 @privacy_bp.route("/create-privacy-policy", methods=["POST"])
+@jwt_required
 def create_privacy_policy_endpoint():
     """
     Expects a JSON body with the following structure:
@@ -67,6 +69,7 @@ def create_privacy_policy_endpoint():
 
 # GET endpoint: Retrieve Privacy Policy by language
 @privacy_bp.route("/privacy-policy/<language>", methods=["GET"])
+@jwt_required
 def get_privacy_policy_by_language(language):
     doc = get_privacy_policy_by_lang(language)
     if doc:
@@ -76,6 +79,7 @@ def get_privacy_policy_by_language(language):
 
 # GET endpoint: Retrieve all Privacy Policy documents
 @privacy_bp.route("/privacy-policy", methods=["GET"])
+@jwt_required
 def get_all_privacy_policy_endpoint():
     docs = get_all_privacy_policies()
     result = {"languages": {}}
@@ -90,6 +94,7 @@ def get_all_privacy_policy_endpoint():
 
 # PUT endpoint: Update Privacy Policy by language (partial update)
 @privacy_bp.route("/update-privacy-policy/<language>", methods=["PUT"])
+@jwt_required
 def update_privacy_policy_endpoint(language):
     """
     Updates an existing Privacy Policy document for a specific language.
@@ -112,6 +117,7 @@ def update_privacy_policy_endpoint(language):
 
 # PUT endpoint: Update Privacy Policy by language and document ID
 @privacy_bp.route("/update-privacy-policy/<language>/<doc_id>", methods=["PUT"])
+@jwt_required
 def update_privacy_policy_by_language_and_id_endpoint(language, doc_id):
     """
     Updates an existing Privacy Policy document for a specific language and _id.

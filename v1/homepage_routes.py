@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from v1.services import geocode_address, get_all_homepage_texts_from_db, get_route_data, convert_distance, get_air_distance, estimate_flight_time, create_homepage_text,update_document_by_language_and_id,update_homepage_text_by_id,get_newest_homepage_text,get_homepage_text_by_lang,delete_homepage_text, MultiLanguageData, convert_object_id
 from pydantic import ValidationError
-
+from v1.auth_services import jwt_required
 
 api_blueprint = Blueprint("api_v1", __name__)
 
@@ -13,6 +13,7 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 @api_blueprint.route("/driving", methods=["POST"])
+@jwt_required
 def driving():
     """
     POST /api/v1/driving
@@ -246,6 +247,7 @@ def driving():
 
 
 @api_blueprint.route("/flight", methods=["POST"])
+@jwt_required
 def compute_air_distance():
     """
     POST /api/v1/air-distance
@@ -335,6 +337,7 @@ homepage_bp = Blueprint("homepage", __name__)
 
 
 @homepage_bp.route("/homepage/homepage-texts", methods=["POST"])
+@jwt_required
 def create_all_texts():
     """
     Expects a JSON body in the shape:
@@ -379,6 +382,7 @@ def create_all_texts():
 
 
 @homepage_bp.route("/homepage-texts/<language>", methods=["GET"])
+@jwt_required
 def get_text(language):
     """
     Returns the homepage text for a specific language (if found).
@@ -391,6 +395,7 @@ def get_text(language):
 
 
 @homepage_bp.route("/homepage/homepage-texts", methods=["GET"])
+@jwt_required
 def get_all_texts():
     """
     Returns all documents, combined into a single structure:
@@ -430,6 +435,7 @@ def get_all_texts():
 
 
 @homepage_bp.route("/homepage/homepage-texts/newest", methods=["GET"])
+@jwt_required
 def get_newest_text():
     """
     Returns the single most recently updated or created homepage text,
@@ -443,6 +449,7 @@ def get_newest_text():
 
 
 @homepage_bp.route("/homepage-texts/<language>/<doc_id>", methods=["PUT"])
+@jwt_required
 def update_text_by_language_and_id(language, doc_id):
     update_data = request.get_json()
     try:
@@ -457,6 +464,7 @@ def update_text_by_language_and_id(language, doc_id):
 
 
 @homepage_bp.route("/homepage-texts/<language>", methods=["DELETE"])
+@jwt_required
 def delete_text(language):
     deleted = delete_homepage_text(language)
     if deleted:
@@ -466,6 +474,7 @@ def delete_text(language):
     
    
 @homepage_bp.route("/homepage-texts/id/<doc_id>", methods=["PUT"])
+@jwt_required
 def update_text_by_id(doc_id):
     update_data = request.get_json()
     updated_doc = update_homepage_text_by_id(doc_id, update_data)
@@ -475,5 +484,5 @@ def update_text_by_id(doc_id):
     else:
         return jsonify({"error": "Not found or invalid ID"}), 404
     
-################## About US #######################
+
 
