@@ -69,7 +69,6 @@ def create_privacy_policy_endpoint():
 
 # GET endpoint: Retrieve Privacy Policy by language
 @privacy_bp.route("/privacy-policy/<language>", methods=["GET"])
-@jwt_required
 def get_privacy_policy_by_language(language):
     doc = get_privacy_policy_by_lang(language)
     if doc:
@@ -79,7 +78,6 @@ def get_privacy_policy_by_language(language):
 
 # GET endpoint: Retrieve all Privacy Policy documents
 @privacy_bp.route("/privacy-policy", methods=["GET"])
-@jwt_required
 def get_all_privacy_policy_endpoint():
     docs = get_all_privacy_policies()
     result = {"languages": {}}

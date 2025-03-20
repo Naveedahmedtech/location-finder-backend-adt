@@ -12,7 +12,6 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 @api_blueprint.route("/driving", methods=["POST"])
-@jwt_required
 def driving():
     """
     POST /api/v1/driving
@@ -23,14 +22,93 @@ def driving():
       "unit_system": "metric" or "imperial" // optional, default "metric"
     }
 
-    1) If `stops` is empty (or not present):
-       - Single-leg logic. Calls get_route_data(origin, destination).
-       - Returns ALL alternative routes in "routes".
-       - Also includes total_distance/time from the first route.
+    1) If stops is empty (or not present):
+       - Single route call to get_route_data(origin, destination)
+       - Return all alternative routes in a "routes" array.
 
-    2) If `stops` is non-empty:
-       - Multi-leg logic. For each leg, calls get_route_data(...), storing the first route
-         in each leg for total_distance/time, while returning all routes in a "routes" array.
+    2) If stops is non-empty:
+       - Multi-leg approach. For each leg, call get_route_data and retrieve all routes.
+       - Return "legs": [...], each with "routes": array of alternatives.
+       - Summation of total distance/time uses only the first (best) route of each leg.
+
+    Example #1 (no stops, multiple routes):
+    {
+      "origin": "New York City",
+      "destination": "Boston",
+      "unit_system": "imperial"
+    }
+
+    => {
+      "origin": "New York City",
+      "destination": "Boston",
+      "unit_system": "imperial",
+      "code": "Ok",
+      "waypoints": [...],
+      "routes": [
+        {
+          "distance": 214.32,
+          "distance_unit": "miles",
+          "duration_hours": 3,
+          "duration_minutes": 49,
+          "geometry": { "type": "LineString", "coordinates": [...] }
+        },
+        {
+          "distance": 218.75,
+          ...
+        }
+      ]
+    }
+
+    Example #2 (with stops):
+    {
+      "origin": "Houston, TX",
+      "stops": ["New Orleans, LA", "Birmingham, AL"],
+      "destination": "Atlanta, GA",
+      "unit_system": "imperial"
+    }
+
+    => {
+      "origin": "Houston, TX",
+      "stops": ["New Orleans, LA", "Birmingham, AL"],
+      "destination": "Atlanta, GA",
+      "unit_system": "imperial",
+      "legs": [
+        {
+          "from": "Houston, TX",
+          "to": "New Orleans, LA",
+          "routes": [
+            {
+              "distance": 348.73,
+              "distance_unit": "miles",
+              "duration_hours": 5,
+              "duration_minutes": 4,
+              "geometry": {...}
+            },
+            {
+              "distance": 351.2,
+              ...
+            }
+          ],
+          "waypoints": [...]
+        },
+        {
+          "from": "New Orleans, LA",
+          "to": "Birmingham, AL",
+          "routes": [...],
+          "waypoints": [...]
+        },
+        {
+          "from": "Birmingham, AL",
+          "to": "Atlanta, GA",
+          "routes": [...],
+          "waypoints": [...]
+        }
+      ],
+      "total_distance": 850.06,
+      "total_distance_unit": "miles",
+      "total_duration_hours": 12,
+      "total_duration_minutes": 45
+    }
     """
     data = request.get_json() or {}
     origin_str = data.get("origin")
@@ -38,11 +116,10 @@ def driving():
     destination_str = data.get("destination")
     unit_system = data.get("unit_system", "metric")
 
-    # Validate
     if not origin_str or not destination_str:
         return jsonify({"error": "origin and destination are required"}), 400
 
-    # 1. Geocode origin & destination
+    # Geocode origin & destination
     origin_coords = geocode_address(origin_str)
     if not origin_coords:
         return jsonify({"error": f"Unable to geocode origin: {origin_str}"}), 400
@@ -51,15 +128,14 @@ def driving():
     if not destination_coords:
         return jsonify({"error": f"Unable to geocode destination: {destination_str}"}), 400
 
-    # --------------------------------------------------------------------------------------
-    # CASE A: NO STOPS -> SINGLE LEG WITH ALTERNATIVES
-    # --------------------------------------------------------------------------------------
+    # If stops is empty => SINGLE-LEG logic w/ alternatives
     if not stops_list:
+        # 1. Single OSRM call for origin -> destination
         route_info = get_route_data(origin_coords, destination_coords)
         if not route_info or "routes" not in route_info:
             return jsonify({"error": "No routes found"}), 400
 
-        # Parse all routes from route_info
+        # 2. Parse all routes
         routes_out = []
         for r in route_info["routes"]:
             dist_m = r["distance"]
@@ -74,17 +150,8 @@ def driving():
                 "distance_unit": dist_unit,
                 "duration_hours": hrs,
                 "duration_minutes": mins,
-                "geometry": r["geometry"]
+                "geometry": r["geometry"]  # GeoJSON
             })
-
-        # Also produce total distance/time from the FIRST (best) route
-        best_route = route_info["routes"][0]
-        best_dist_m = best_route["distance"]
-        best_dur_s  = best_route["duration"]
-
-        best_dist_conv, best_dist_unit = convert_distance(best_dist_m, unit_system)
-        best_hrs = int(best_dur_s // 3600)
-        best_mins = int((best_dur_s % 3600) // 60)
 
         return jsonify({
             "origin": origin_str,
@@ -92,13 +159,7 @@ def driving():
             "unit_system": unit_system,
             "code": route_info.get("code", "NoCode"),
             "waypoints": route_info.get("waypoints", []),
-            "routes": routes_out,
-
-            # single-leg total (from first route)
-            "total_distance": best_dist_conv,
-            "total_distance_unit": best_dist_unit,
-            "total_duration_hours": best_hrs,
-            "total_duration_minutes": best_mins
+            "routes": routes_out
         }), 200
 
     # Else => MULTI-LEG logic with stops
@@ -184,7 +245,6 @@ def driving():
 
 
 @api_blueprint.route("/flight", methods=["POST"])
-@jwt_required
 def compute_air_distance():
     """
     POST /api/v1/air-distance
@@ -266,3 +326,4 @@ def compute_air_distance():
         "geometry": geometry,
         "notes": "Estimated flight time at 900 km/h"
     }), 200
+

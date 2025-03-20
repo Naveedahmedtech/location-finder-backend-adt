@@ -56,7 +56,6 @@ def create_about_info_endpoint():
 
 # GET endpoint for a specific language
 @about_bp.route("/about-info/<language>", methods=["GET"])
-@jwt_required
 def get_about_info_by_language(language):
     doc = get_about_info_by_lang(about_info_collection, language)
     if doc:
@@ -66,7 +65,6 @@ def get_about_info_by_language(language):
 
 # GET endpoint to fetch all About-info entries
 @about_bp.route("/about-info", methods=["GET"])
-@jwt_required
 def get_all_about_info_endpoint():
     docs = get_all_about_info(about_info_collection)
     # Optionally, transform list into a languages dict

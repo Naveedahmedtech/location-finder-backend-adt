@@ -4,6 +4,7 @@ from v1.homepage_routes import homepage_bp
 from v1.about_info_routes import about_bp
 from v1.privacy_policy_routes import privacy_bp
 from v1.auth_routes import auth_blueprint
+from v1.api import api_blueprint
 
 def create_app():
     app = Flask(__name__)
@@ -11,9 +12,8 @@ def create_app():
     app.config.from_object(Config)
     
     # Register the API blueprint
-    from v1.homepage_routes import api_blueprint
     app.register_blueprint(api_blueprint, url_prefix="/api/v1")
-    app.register_blueprint(homepage_bp, url_prefix="/api/v1/homepage")
+    app.register_blueprint(homepage_bp, url_prefix="/api/v1")
     app.register_blueprint(about_bp, url_prefix="/api/v1/about")
     app.register_blueprint(privacy_bp, url_prefix="/api/v1/pp")
     app.register_blueprint(auth_blueprint, url_prefix="/api/v1/auth")
