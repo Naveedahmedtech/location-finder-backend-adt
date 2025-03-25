@@ -162,7 +162,9 @@ class SingleLanguageData(BaseModel):
     intro_paragraph: str
     features: List[str]
     cta: str
-
+class LanguageData(BaseModel):
+    language: str
+    content: SingleLanguageData
 class MultiLanguageData(BaseModel):
     languages: Dict[str, SingleLanguageData]
 

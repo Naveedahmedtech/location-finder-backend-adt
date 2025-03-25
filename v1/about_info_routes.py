@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
-from v1.about_info_services import (MultiLanguageAboutInfo,
+from v1.about_info_services import (LanguageAboutInfo, MultiLanguageAboutInfo,
     create_about_info,
     get_about_info_by_lang,
     get_all_about_info,
@@ -19,35 +19,29 @@ about_bp = Blueprint("about", __name__)
 def create_about_info_endpoint():
     """
     Expects a JSON body with the following structure:
-    
     {
-      "languages": {
-        "en": {
-          "title": "Our Mission: Simplify Your Travel Planning",
-          "paragraphs": [ "Paragraph 1", "Paragraph 2", ... ]
-        },
-        "es": {
-          "title": "Nuestra Misión: Simplificar tu Planificación de Viajes",
-          "paragraphs": [ "Parrafo 1", "Parrafo 2", ... ]
-        },
-        ...
-      }
+        "language": "en",
+        "content": {
+            "title": "Our Mission: Simplify Your Travel Planning",
+            "paragraphs": ["Paragraph 1", "Paragraph 2", ...]
+        }
     }
+
     
     Each language entry is stored as a separate document.
     """
     try:
+        inserted_docs=[]
         data = request.get_json()
-        multi_about_obj = MultiLanguageAboutInfo(**data)
-        inserted_docs = []
-        for lang_code, content in multi_about_obj.languages.items():
-            doc_to_insert = {
-                "language": lang_code,
-                "title": content.title,
-                "paragraphs": content.paragraphs,
-            }
-            inserted = create_about_info(about_info_collection, doc_to_insert)
-            inserted_docs.append(convert_object_id(inserted))
+        about_info = LanguageAboutInfo(**data)
+        
+        doc_to_insert = {
+            "language": about_info.language,
+            "title": about_info.content.title,
+            "paragraphs": about_info.content.paragraphs,
+        }
+        inserted = create_about_info(about_info_collection, doc_to_insert)
+        inserted_docs.append(convert_object_id(inserted))
         return jsonify({"inserted": inserted_docs}), 201
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400

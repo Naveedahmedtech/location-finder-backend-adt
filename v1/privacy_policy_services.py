@@ -10,7 +10,7 @@ class PrivacyPolicyLanguageData(BaseModel):
     effective_date: str
     introduction: str
     information_we_collect: List[Dict[str, str]]
-    how_we_use_info: List[str]
+    how_we_use_info: List[Dict[str, str]]
     cookies: str
     third_party_services: str
     data_security: str
@@ -20,6 +20,9 @@ class PrivacyPolicyLanguageData(BaseModel):
 
 class MultiLanguagePrivacyPolicy(BaseModel):
     languages: Dict[str, PrivacyPolicyLanguageData]
+class LanguagePrivacyPolicy(BaseModel):
+    language: str
+    content: PrivacyPolicyLanguageData
 
 
 def convert_object_id(doc: dict) -> dict:

@@ -10,6 +10,9 @@ class SingleLanguageAboutInfo(BaseModel):
 
 class MultiLanguageAboutInfo(BaseModel):
     languages: Dict[str, SingleLanguageAboutInfo]
+class LanguageAboutInfo(BaseModel):
+    language: str
+    content: SingleLanguageAboutInfo
 
 
 def convert_object_id(doc: dict) -> dict:

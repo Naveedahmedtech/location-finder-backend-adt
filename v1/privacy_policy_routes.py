@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from v1.auth_services import jwt_required
-from v1.privacy_policy_services import (MultiLanguagePrivacyPolicy,
+from v1.privacy_policy_services import (LanguagePrivacyPolicy, MultiLanguagePrivacyPolicy,
     create_privacy_policy,
     get_privacy_policy_by_lang,
     get_all_privacy_policies,
@@ -18,49 +18,42 @@ privacy_bp = Blueprint("privacy", __name__)
 def create_privacy_policy_endpoint():
     """
     Expects a JSON body with the following structure:
-    
     {
-      "languages": {
-        "en": {
-          "effective_date": "25th February, 2025",
-          "introduction": "...",
-          "information_we_collect": [ { "title": "...", "description": "..." }, ... ],
-          "how_we_use_info": [ "Usage info 1", "Usage info 2" ],
-          "cookies": "...",
-          "third_party_services": "...",
-          "data_security": "...",
-          "your_rights": "...",
-          "changes": "...",
-          "contact_us": "..."
-        },
-        "es": { ... },
-        "pt": { ... },
-        "fr": { ... }
-      }
+        "language": "en",
+        "content": {
+            "effective_date": "25th February, 2025",
+            "introduction": "...",
+            "information_we_collect": [ { "title": "...", "description": "..." }, ... ],
+            "how_we_use_info": [ "Usage info 1", "Usage info 2" ],
+            "cookies": "...",
+            "third_party_services": "...",
+            "data_security": "...",
+            "your_rights": "...",
+            "changes": "...",
+            "contact_us": "..."
+        }
     }
-    
     Each language is stored as a separate document.
     """
     try:
         data = request.get_json()
-        multi_policy_obj = MultiLanguagePrivacyPolicy(**data)
-        inserted_docs = []
-        for lang_code, content in multi_policy_obj.languages.items():
-            doc_to_insert = {
-                "language": lang_code,
-                "effective_date": content.effective_date,
-                "introduction": content.introduction,
-                "information_we_collect": content.information_we_collect,
-                "how_we_use_info": content.how_we_use_info,
-                "cookies": content.cookies,
-                "third_party_services": content.third_party_services,
-                "data_security": content.data_security,
-                "your_rights": content.your_rights,
-                "changes": content.changes,
-                "contact_us": content.contact_us,
-            }
-            inserted = create_privacy_policy(doc_to_insert)
-            inserted_docs.append(convert_object_id(inserted))
+        policy_data = LanguagePrivacyPolicy(**data)
+        inserted_docs=[]
+        doc_to_insert = {
+            "language": policy_data.language,
+            "effective_date": policy_data.content.effective_date,
+            "introduction": policy_data.content.introduction,
+            "information_we_collect": policy_data.content.information_we_collect,
+            "how_we_use_info": policy_data.content.how_we_use_info,
+            "cookies": policy_data.content.cookies,
+            "third_party_services": policy_data.content.third_party_services,
+            "data_security": policy_data.content.data_security,
+            "your_rights": policy_data.content.your_rights,
+            "changes": policy_data.content.changes,
+            "contact_us": policy_data.content.contact_us,
+        }
+        inserted = create_privacy_policy(doc_to_insert)
+        inserted_docs.append(convert_object_id(inserted))
         return jsonify({"inserted": inserted_docs}), 201
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
