@@ -15,7 +15,7 @@ def create_app():
     app.register_blueprint(api_blueprint, url_prefix="/api/v1")
     app.register_blueprint(homepage_bp, url_prefix="/api/v1")
     app.register_blueprint(about_bp, url_prefix="/api/v1/about")
-    app.register_blueprint(privacy_bp, url_prefix="/api/v1/pp")
+    app.register_blueprint(privacy_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_blueprint, url_prefix="/api/v1/auth")
 
     @app.errorhandler(404)
