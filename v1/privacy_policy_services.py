@@ -24,6 +24,29 @@ class LanguagePrivacyPolicy(BaseModel):
     language: str
     content: PrivacyPolicyLanguageData
 
+def replace_privacy_policy_doc(language: str, doc_data: dict):
+    """
+    1) Delete any existing record with the same 'language'
+    2) Insert new doc
+    3) Return the newly inserted doc
+
+    :param language: e.g. "en", "es", ...
+    :param doc_data: fields for 'effective_date', 'introduction', etc.
+    :return: the inserted document (dict) after insertion
+    """
+    # 1) Check if doc for this language exists
+    existing = privacy_policy_collection.find_one({"language": language})
+    if existing:
+        privacy_policy_collection.delete_one({"_id": existing["_id"]})
+    
+    # 2) Insert new doc
+    doc_data["language"] = language
+    doc_data["updated_at"] = datetime.utcnow()
+    
+    inserted_id = privacy_policy_collection.insert_one(doc_data).inserted_id
+    # retrieve for final output
+    inserted_doc = privacy_policy_collection.find_one({"_id": inserted_id})
+    return inserted_doc
 
 def convert_object_id(doc: dict) -> dict:
     """

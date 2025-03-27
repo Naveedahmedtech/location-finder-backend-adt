@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from v1.auth_services import jwt_required
 from v1.privacy_policy_services import (LanguagePrivacyPolicy, MultiLanguagePrivacyPolicy,
-    create_privacy_policy,
+    create_privacy_policy, replace_privacy_policy_doc,
     get_privacy_policy_by_lang,
     get_all_privacy_policies,
     update_privacy_policy,
@@ -12,35 +12,26 @@ from v1.privacy_policy_services import (LanguagePrivacyPolicy, MultiLanguagePriv
 
 privacy_bp = Blueprint("privacy", __name__)
 
-# POST endpoint: Bulk create Privacy Policy texts for multiple languages
 @privacy_bp.route("/create-privacy-policy", methods=["POST"])
 @jwt_required
 def create_privacy_policy_endpoint():
     """
-    Expects a JSON body with the following structure:
+    Expects JSON e.g.:
     {
-        "language": "en",
-        "content": {
-            "effective_date": "25th February, 2025",
-            "introduction": "...",
-            "information_we_collect": [ { "title": "...", "description": "..." }, ... ],
-            "how_we_use_info": [ "Usage info 1", "Usage info 2" ],
-            "cookies": "...",
-            "third_party_services": "...",
-            "data_security": "...",
-            "your_rights": "...",
-            "changes": "...",
-            "contact_us": "..."
-        }
+      "language": "en",
+      "content": { 
+        "effective_date": "...", "introduction": "...", etc.
+      }
     }
-    Each language is stored as a separate document.
+    - Delete old doc for that language (if exists)
+    - Insert new doc
+    - Return final doc
     """
     try:
         data = request.get_json()
-        policy_data = LanguagePrivacyPolicy(**data)
-        inserted_docs=[]
+        policy_data = LanguagePrivacyPolicy(**data)  # Pydantic validation
+
         doc_to_insert = {
-            "language": policy_data.language,
             "effective_date": policy_data.content.effective_date,
             "introduction": policy_data.content.introduction,
             "information_we_collect": policy_data.content.information_we_collect,
@@ -50,15 +41,24 @@ def create_privacy_policy_endpoint():
             "data_security": policy_data.content.data_security,
             "your_rights": policy_data.content.your_rights,
             "changes": policy_data.content.changes,
-            "contact_us": policy_data.content.contact_us,
+            "contact_us": policy_data.content.contact_us
         }
-        inserted = create_privacy_policy(doc_to_insert)
-        inserted_docs.append(convert_object_id(inserted))
-        return jsonify({"inserted": inserted_docs}), 201
-    except ValidationError as e:
-        return jsonify({"error": str(e)}), 400
+
+        # Call the service function
+        replaced_doc = replace_privacy_policy_doc(
+            language=policy_data.language,
+            doc_data=doc_to_insert
+        )
+
+        # Convert _id to string if desired
+        replaced_doc = convert_object_id(replaced_doc)
+        return jsonify({"inserted": replaced_doc}), 201
+
+    except ValidationError as ve:
+        return jsonify({"error": str(ve)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # GET endpoint: Retrieve Privacy Policy by language
 @privacy_bp.route("/privacy-policy/<language>", methods=["GET"])

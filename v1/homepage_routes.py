@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from v1.services import LanguageData, geocode_address, get_all_homepage_texts_from_db, get_route_data, convert_distance, get_air_distance, estimate_flight_time, create_homepage_text,update_document_by_language_and_id,update_homepage_text_by_id,get_newest_homepage_text,get_homepage_text_by_lang,delete_homepage_text, MultiLanguageData, convert_object_id
+from v1.services import replace_homepage_text, get_all_homepage_texts_from_db, create_homepage_text,update_document_by_language_and_id,update_homepage_text_by_id,get_newest_homepage_text,get_homepage_text_by_lang,delete_homepage_text, MultiLanguageData, convert_object_id
 from pydantic import ValidationError
 from v1.auth_services import jwt_required
 
@@ -13,39 +13,46 @@ homepage_bp = Blueprint("homepage", __name__)
 @jwt_required
 def create_all_texts():
     """
-    Expects a JSON body in the shape:
+    Expects JSON like:
     {
-        "language": "pt",
-        "content": {
-            "headline": "...",
-            "intro_paragraph": "...",
-            "cta": "...",
-            "features": ["...", "...", "..."]
-        }
+      "languages": {
+        "en": {
+          "headline": "English headline",
+          "intro_paragraph": "...",
+          "features": [...],
+          "cta": "..."
+        },
+        "es": {...},
+        ...
+      }
     }
-    Inserts/Upserts each language as a separate document.
+    For each language (en, es, etc.), we:
+      1) Delete existing doc (if any),
+      2) Insert new doc
+    Returns array of final inserted docs.
     """
     try:
-        inserted_docs = []
         data = request.get_json()
-        language_data = LanguageData(**data)
+        multi_text_obj = MultiLanguageData(**data)  # your Pydantic model w/ { languages: Dict[str, SingleLanguageContent] }
+
+        inserted_docs = []
+        for lang_code, content in multi_text_obj.languages.items():
+            doc_to_insert = {
+                "headline": content.headline,
+                "intro_paragraph": content.intro_paragraph,
+                "features": content.features,
+                "cta": content.cta
+            }
+            replaced_doc = replace_homepage_text(lang_code, doc_to_insert)
+            replaced_doc = convert_object_id(replaced_doc)  # if you want to string-ify _id
+            inserted_docs.append(replaced_doc)
         
-        doc_to_insert = {
-            "language": language_data.language,
-            "headline": language_data.content.headline,
-            "intro_paragraph": language_data.content.intro_paragraph,
-            "features": language_data.content.features,
-            "cta": language_data.content.cta,
-        }
-        inserted = create_homepage_text(doc_to_insert)
-        inserted = convert_object_id(inserted)  # convert ObjectId to string
-        inserted_docs.append(inserted)
-        return ({"inserted": inserted_docs}), 200
+        return {"inserted": inserted_docs}, 201
 
     except ValidationError as e:
-        return ({"error": str(e)}), 400
+        return {"error": str(e)}, 400
     except Exception as e:
-        return ({"error": str(e)}), 500
+        return {"error": str(e)}, 500
 
 
 @homepage_bp.route("/homepage-texts/<language>", methods=["GET"])
