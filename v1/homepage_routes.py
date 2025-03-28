@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from v1.services import LanguageData, geocode_address, get_all_homepage_texts_from_db, get_route_data, convert_distance, get_air_distance, estimate_flight_time, create_homepage_text,update_document_by_language_and_id,update_homepage_text_by_id,get_newest_homepage_text,get_homepage_text_by_lang,delete_homepage_text, MultiLanguageData, convert_object_id
+from v1.services import LanguageData, get_all_homepage_texts_from_db, create_homepage_text,update_document_by_language_and_id, update_homepage_text,update_homepage_text_by_id,get_newest_homepage_text,get_homepage_text_by_lang,delete_homepage_text, convert_object_id
 from pydantic import ValidationError
 from v1.auth_services import jwt_required
 
@@ -24,28 +24,46 @@ def create_all_texts():
         }
     }
     Inserts/Upserts each language as a separate document.
+    If data is already present, it will update the existing data instead of creating a new one.
     """
     try:
         inserted_docs = []
         data = request.get_json()
-        language_data = LanguageData(**data)
-        
-        doc_to_insert = {
-            "language": language_data.language,
-            "headline": language_data.content.headline,
-            "intro_paragraph": language_data.content.intro_paragraph,
-            "features": language_data.content.features,
-            "cta": language_data.content.cta,
-        }
-        inserted = create_homepage_text(doc_to_insert)
-        inserted = convert_object_id(inserted)  # convert ObjectId to string
-        inserted_docs.append(inserted)
+
+        for language_code, content in data.items():
+            language_data = LanguageData(language=language_code, content=content)
+
+            # Construct document to insert or update
+            doc_to_upsert = {
+                "language": language_data.language,
+                "headline": language_data.content.headline,
+                "intro_paragraph": language_data.content.intro_paragraph,
+                "features": language_data.content.features,
+                "cta": language_data.content.cta,
+            }
+
+            # Check if data for this language exists, delete if present
+            existing_doc = get_homepage_text_by_lang(language_code)
+            if existing_doc:
+                # Update the existing document if found (upsert behavior)
+                updated = update_homepage_text(language_code, doc_to_upsert)
+                updated = convert_object_id(updated)  # convert ObjectId to string
+                inserted_docs.append(updated)
+            else:
+                # If document doesn't exist, insert a new one
+                inserted = create_homepage_text(doc_to_upsert)
+                inserted = convert_object_id(inserted)  # convert ObjectId to string
+                inserted_docs.append(inserted)
+
         return ({"inserted": inserted_docs}), 200
 
     except ValidationError as e:
         return ({"error": str(e)}), 400
     except Exception as e:
         return ({"error": str(e)}), 500
+
+
+
 
 
 @homepage_bp.route("/homepage-texts/<language>", methods=["GET"])
@@ -148,5 +166,3 @@ def update_text_by_id(doc_id):
     else:
         return jsonify({"error": "Not found or invalid ID"}), 404
     
-
-

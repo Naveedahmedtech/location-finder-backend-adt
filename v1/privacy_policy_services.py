@@ -33,6 +33,14 @@ def convert_object_id(doc: dict) -> dict:
         doc["_id"] = str(doc["_id"])
     return doc
 
+def delete_privacy_policy(doc_id):
+    """
+    Deletes a document from the collection based on its document ID.
+    Args:
+    - doc_id: The ID of the document to be deleted.
+    """
+    privacy_policy_collection.delete_one({"_id": doc_id})
+    
 def create_privacy_policy(doc: dict) -> dict:
     """
     Inserts a new document into the Privacy Policy collection.

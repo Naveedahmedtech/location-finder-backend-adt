@@ -40,6 +40,14 @@ def get_about_info_by_lang(collection, language: str) -> Optional[dict]:
     """
     return collection.find_one({"language": language})
 
+def delete_about_info(collection, doc_id):
+    """
+    Deletes a document from the collection based on its document ID.
+    Args:
+    - doc_id: The ID of the document to be deleted.
+    """
+    collection.delete_one({"_id": doc_id})
+
 def get_all_about_info(collection) -> List[dict]:
     """
     Returns all documents in the About-info collection.

@@ -162,9 +162,11 @@ class SingleLanguageData(BaseModel):
     intro_paragraph: str
     features: List[str]
     cta: str
+
 class LanguageData(BaseModel):
     language: str
     content: SingleLanguageData
+
 class MultiLanguageData(BaseModel):
     languages: Dict[str, SingleLanguageData]
 
@@ -215,21 +217,27 @@ def get_all_homepage_texts() -> List[dict]:
     return list(homepage_texts_collection.find({}))
 
 # UPDATE
-def update_homepage_text(language: str, update_data: dict) -> Optional[dict]:
+def update_homepage_text(language_code, doc_to_upsert):
     """
-    Updates the document for `language` with the fields in update_data.
-    Also updates the updated_at timestamp.
-    Uses ReturnDocument.AFTER to return the updated doc.
-    """
-    # Make sure to update the 'updated_at' field
-    update_data["updated_at"] = datetime.utcnow()
+    Updates the existing document with the given language code.
+    If the document does not exist, it creates a new one (upsert).
     
-    updated_doc = homepage_texts_collection.find_one_and_update(
-        {"language": language},
-        {"$set": update_data},
-        return_document=ReturnDocument.AFTER
+    Args:
+    - language_code: The language code to identify the document.
+    - doc_to_upsert: The document data to insert or update.
+    
+    Returns:
+    - The updated or inserted document.
+    """
+    result = homepage_texts_collection.update_one(
+        {"language": language_code},  # Find document by language
+        {"$set": doc_to_upsert},  # Update the document with the new data
+        upsert=True  # If no document is found, insert a new one
     )
-    return updated_doc
+    if result.upserted_id:  # If a new document is inserted
+        return get_homepage_text_by_lang(language_code)
+    else:
+        return doc_to_upsert  # Return the updated data if it was updated
 
 # DELETE
 def delete_homepage_text(language: str) -> bool:
