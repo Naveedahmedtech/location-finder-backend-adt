@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from v1.about_info_services import (LanguageAboutInfo, MultiLanguageAboutInfo,
-    create_about_info, replace_about_info_lang,
+    create_about_info,
     get_about_info_by_lang,
     get_all_about_info,
     update_about_info,
@@ -13,48 +13,40 @@ from v1.auth_services import jwt_required
 
 about_bp = Blueprint("about", __name__)
 
+# POST endpoint to create/update About-info in bulk
 @about_bp.route("/create-about-info", methods=["POST"])
 @jwt_required
-def create_about_info_bulk():
+def create_about_info_endpoint():
     """
-    POST /create-about-info-bulk
-    Expects JSON like:
+    Expects a JSON body with the following structure:
     {
-      "languages": {
-        "en": {
-          "title": "Our Mission: ...",
-          "paragraphs": [...]
-        },
-        "es": { ... },
-        "pt": { ... },
-        "fr": { ... }
-      }
+        "language": "en",
+        "content": {
+            "title": "Our Mission: Simplify Your Travel Planning",
+            "paragraphs": ["Paragraph 1", "Paragraph 2", ...]
+        }
     }
-    For each language, we delete old doc + insert a new doc in 'about_info' collection.
-    Returns array of final inserted docs.
+
+    
+    Each language entry is stored as a separate document.
     """
     try:
+        inserted_docs=[]
         data = request.get_json()
-        multi_about = MultiLanguageAboutInfo(**data)  
-        # shape: { languages: { "en": {title, paragraphs}, "es": {...}, ... } }
-
-        inserted_docs = []
-        for lang_code, single_info in multi_about.languages.items():
-            doc_to_insert = {
-                "title": single_info.title,
-                "paragraphs": single_info.paragraphs,
-            }
-            replaced_doc = replace_about_info_lang(collection=about_info_collection, lang_code=lang_code, doc_data=doc_to_insert)
-            replaced_doc = convert_object_id(replaced_doc)  # optional
-            inserted_docs.append(replaced_doc)
-
+        about_info = LanguageAboutInfo(**data)
+        
+        doc_to_insert = {
+            "language": about_info.language,
+            "title": about_info.content.title,
+            "paragraphs": about_info.content.paragraphs,
+        }
+        inserted = create_about_info(about_info_collection, doc_to_insert)
+        inserted_docs.append(convert_object_id(inserted))
         return jsonify({"inserted": inserted_docs}), 201
-
-    except ValidationError as ve:
-        return jsonify({"error": str(ve)}), 400
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # GET endpoint for a specific language
 @about_bp.route("/about-info/<language>", methods=["GET"])

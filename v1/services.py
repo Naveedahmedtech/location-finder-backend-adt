@@ -165,7 +165,6 @@ class SingleLanguageData(BaseModel):
 class LanguageData(BaseModel):
     language: str
     content: SingleLanguageData
-    
 class MultiLanguageData(BaseModel):
     languages: Dict[str, SingleLanguageData]
 
@@ -366,24 +365,5 @@ def update_document_by_language_and_id(language: str, doc_id: str, update_data: 
     
     return updated_doc
 
-def replace_homepage_text(lang: str, doc_data: dict) -> dict:
-    """
-    1) Delete any existing doc with 'language': lang
-    2) Insert a new doc
-    3) Return the inserted doc
-
-    doc_data is everything except 'language' (we pass language separately).
-    """
-    # delete old
-    existing = homepage_texts_collection.find_one({"language": lang})
-    if existing:
-        homepage_texts_collection.delete_one({"_id": existing["_id"]})
-    
-    # insert new
-    doc_data["language"] = lang
-    doc_data["updated_at"] = datetime.utcnow()
-    
-    inserted_id = homepage_texts_collection.insert_one(doc_data).inserted_id
-    inserted_doc = homepage_texts_collection.find_one({"_id": inserted_id})
-    return inserted_doc
+########## About us ###############
 

@@ -10,7 +10,6 @@ class SingleLanguageAboutInfo(BaseModel):
 
 class MultiLanguageAboutInfo(BaseModel):
     languages: Dict[str, SingleLanguageAboutInfo]
-
 class LanguageAboutInfo(BaseModel):
     language: str
     content: SingleLanguageAboutInfo
@@ -91,21 +90,3 @@ def update_about_info_by_language_and_id(collection, language: str, doc_id: str,
     )
     
     return updated_doc
-
-def replace_about_info_lang(collection, lang_code: str, doc_data: dict) -> dict:
-    """
-    1) Delete existing doc with language=lang_code (if any)
-    2) Insert a new doc
-    3) Return the inserted doc
-    """
-    existing = collection.find_one({"language": lang_code})
-    if existing:
-        collection.delete_one({"_id": existing["_id"]})
-
-    doc_data["language"] = lang_code
-    doc_data["updated_at"] = datetime.utcnow()
-
-    inserted_id = collection.insert_one(doc_data).inserted_id
-    new_doc = collection.find_one({"_id": inserted_id})
-    return new_doc
-
