@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from v1.auth_services import jwt_required
-from v1.services import geocode_address, get_route_data, convert_distance, get_air_distance, estimate_flight_time
+from v1.services import geocode_address, get_city_coordinates, get_city_coordinates_geonames, get_route_data, convert_distance, get_air_distance, estimate_flight_time, handle_multi_leg_route, handle_single_leg_route, haversine_distance
 
 api_blueprint = Blueprint("api/v1", __name__)
 
@@ -11,255 +11,355 @@ def health():
     """
     return jsonify({"status": "ok"}), 200
 
+# @api_blueprint.route("/driving", methods=["POST"])
+# def driving():
+#     """
+#     POST /api/v1/driving
+#     {
+#       "origin": "some place",
+#       "stops": ["stop1", "stop2", ...]  // optional or empty
+#       "destination": "some other place",
+#       "unit_system": "metric" or "imperial" // optional, default "metric"
+#     }
+
+#     1) If stops is empty (or not present):
+#        - Single route call to get_route_data(origin, destination)
+#        - Return all alternative routes in a "routes" array.
+
+#     2) If stops is non-empty:
+#        - Multi-leg approach. For each leg, call get_route_data and retrieve all routes.
+#        - Return "legs": [...], each with "routes": array of alternatives.
+#        - Summation of total distance/time uses only the first (best) route of each leg.
+
+#     Example #1 (no stops, multiple routes):
+#     {
+#       "origin": "New York City",
+#       "destination": "Boston",
+#       "unit_system": "imperial"
+#     }
+
+#     => {
+#       "origin": "New York City",
+#       "destination": "Boston",
+#       "unit_system": "imperial",
+#       "code": "Ok",
+#       "waypoints": [...],
+#       "routes": [
+#         {
+#           "distance": 214.32,
+#           "distance_unit": "miles",
+#           "duration_hours": 3,
+#           "duration_minutes": 49,
+#           "geometry": { "type": "LineString", "coordinates": [...] }
+#         },
+#         {
+#           "distance": 218.75,
+#           ...
+#         }
+#       ]
+#     }
+
+#     Example #2 (with stops):
+#     {
+#       "origin": "Houston, TX",
+#       "stops": ["New Orleans, LA", "Birmingham, AL"],
+#       "destination": "Atlanta, GA",
+#       "unit_system": "imperial"
+#     }
+
+#     => {
+#       "origin": "Houston, TX",
+#       "stops": ["New Orleans, LA", "Birmingham, AL"],
+#       "destination": "Atlanta, GA",
+#       "unit_system": "imperial",
+#       "legs": [
+#         {
+#           "from": "Houston, TX",
+#           "to": "New Orleans, LA",
+#           "routes": [
+#             {
+#               "distance": 348.73,
+#               "distance_unit": "miles",
+#               "duration_hours": 5,
+#               "duration_minutes": 4,
+#               "geometry": {...}
+#             },
+#             {
+#               "distance": 351.2,
+#               ...
+#             }
+#           ],
+#           "waypoints": [...]
+#         },
+#         {
+#           "from": "New Orleans, LA",
+#           "to": "Birmingham, AL",
+#           "routes": [...],
+#           "waypoints": [...]
+#         },
+#         {
+#           "from": "Birmingham, AL",
+#           "to": "Atlanta, GA",
+#           "routes": [...],
+#           "waypoints": [...]
+#         }
+#       ],
+#       "total_distance": 850.06,
+#       "total_distance_unit": "miles",
+#       "total_duration_hours": 12,
+#       "total_duration_minutes": 45
+#     }
+#     """
+#     data = request.get_json() or {}
+#     origin_str = data.get("origin")
+#     stops_list = data.get("stops", [])
+#     destination_str = data.get("destination")
+#     unit_system = data.get("unit_system", "metric")
+
+#     if not origin_str or not destination_str:
+#         return jsonify({"error": "origin and destination are required"}), 400
+
+#     # Geocode origin & destination
+#     origin_coords = geocode_address(origin_str)
+#     if not origin_coords:
+#         return jsonify({"error": f"Unable to geocode origin: {origin_str}"}), 400
+
+#     destination_coords = geocode_address(destination_str)
+#     if not destination_coords:
+#         return jsonify({"error": f"Unable to geocode destination: {destination_str}"}), 400
+
+#     # If stops is empty => SINGLE-LEG logic w/ alternatives
+#     if not stops_list:
+#         # 1. Single OSRM call for origin -> destination
+#         route_info = get_route_data(origin_coords, destination_coords)
+#         if not route_info or "routes" not in route_info:
+#             return jsonify({"error": "No routes found"}), 400
+
+#         # 2. Parse all routes
+#         routes_out = []
+#         for r in route_info["routes"]:
+#             dist_m = r["distance"]
+#             dur_s  = r["duration"]
+
+#             dist_conv, dist_unit = convert_distance(dist_m, unit_system)
+#             hrs = int(dur_s // 3600)
+#             mins = int((dur_s % 3600) // 60)
+
+#             routes_out.append({
+#                 "distance": dist_conv,
+#                 "distance_unit": dist_unit,
+#                 "duration_hours": hrs,
+#                 "duration_minutes": mins,
+#                 "geometry": r["geometry"]  # GeoJSON
+#             })
+
+#         return jsonify({
+#             "origin": origin_str,
+#             "destination": destination_str,
+#             "unit_system": unit_system,
+#             "code": route_info.get("code", "NoCode"),
+#             "waypoints": route_info.get("waypoints", []),
+#             "routes": routes_out
+#         }), 200
+
+#     # Else => MULTI-LEG logic with stops
+#     # 1. Geocode each stop
+#     stops_coords = []
+#     for s_str in stops_list:
+#         sc = geocode_address(s_str)
+#         if not sc:
+#             return jsonify({"error": f"Unable to geocode stop: {s_str}"}), 400
+#         stops_coords.append(sc)
+
+#     # 2. Build the coordinate list
+#     all_coords = [origin_coords] + stops_coords + [destination_coords]
+#     all_names = [origin_str] + stops_list + [destination_str]
+
+#     legs_output = []
+#     total_distance_m = 0.0
+#     total_duration_s = 0.0
+
+#     # 3. For each leg, get routes from OSRM (alternatives=true)
+#     #    Summation is from the first (best) route
+#     for i in range(len(all_coords) - 1):
+#         start_coords = all_coords[i]
+#         end_coords   = all_coords[i+1]
+#         start_name   = all_names[i]
+#         end_name     = all_names[i+1]
+
+#         leg_info = get_route_data(start_coords, end_coords)
+#         if not leg_info or "routes" not in leg_info:
+#             return jsonify({"error": f"No routes found for leg: {start_name} -> {end_name}"}), 400
+
+#         # Build "routes": an array of alternatives
+#         routes_array = []
+#         for route_obj in leg_info["routes"]:
+#             dist_m = route_obj["distance"]
+#             dur_s  = route_obj["duration"]
+
+#             dist_conv, dist_unit = convert_distance(dist_m, unit_system)
+#             hrs = int(dur_s // 3600)
+#             mins = int((dur_s % 3600) // 60)
+
+#             routes_array.append({
+#                 "distance": dist_conv,
+#                 "distance_unit": dist_unit,
+#                 "duration_hours": hrs,
+#                 "duration_minutes": mins,
+#                 "geometry": route_obj["geometry"]
+#             })
+
+#         # The first route is the best route for total distance/duration
+#         best = leg_info["routes"][0]
+#         total_distance_m += best["distance"]
+#         total_duration_s += best["duration"]
+
+#         # Add the leg object
+#         legs_output.append({
+#             "from": start_name,
+#             "to": end_name,
+#             "routes": routes_array,
+#             "waypoints": leg_info.get("waypoints", [])
+#         })
+
+#     # 4. Summaries
+#     total_dist_conv, total_dist_unit = convert_distance(total_distance_m, unit_system)
+#     total_hrs = int(total_duration_s // 3600)
+#     total_mins = int((total_duration_s % 3600) // 60)
+
+#     return jsonify({
+#         "origin": origin_str,
+#         "stops": stops_list,
+#         "destination": destination_str,
+#         "unit_system": unit_system,
+#         "legs": legs_output,
+#         "total_distance": total_dist_conv,
+#         "total_distance_unit": total_dist_unit,
+#         "total_duration_hours": total_hrs,
+#         "total_duration_minutes": total_mins
+#     }), 200
+
+# @api_blueprint.route("/driving", methods=["POST"])
+# def driving():
+#     """
+#     POST /api/v1/driving
+#     Handles driving routes with cities fetched from the database.
+#     Supports formats like "City, State" or "City, State, Country"
+#     """
+#     data = request.get_json() or {}
+#     origin_name = data.get("origin")
+#     stops_list = data.get("stops", [])
+#     destination_name = data.get("destination")
+#     unit_system = data.get("unit_system", "metric")
+
+#     if not origin_name or not destination_name:
+#         return jsonify({"error": "origin and destination are required"}), 400
+
+#     def parse_location(location_str):
+#         """Parse location string into city, state/province, and country components"""
+#         parts = [part.strip() for part in location_str.split(",")]
+#         if len(parts) < 1:
+#             return None
+#         city = parts[0]
+#         state = parts[1] if len(parts) > 1 else None
+#         country = parts[2] if len(parts) > 2 else None
+#         return {"city": city, "state": state, "country": country}
+
+#     # Fetch and validate cities
+#     origin_parts = parse_location(origin_name)
+#     if not origin_parts:
+#         return jsonify({"error": f"Invalid origin format: {origin_name}"}), 400
+#     origin_coords = get_city_coordinates(origin_name)
+#     if not origin_coords:
+#         return jsonify({"error": f"Origin city not found: {origin_name}"}), 400
+
+#     destination_parts = parse_location(destination_name)
+#     if not destination_parts:
+#         return jsonify({"error": f"Invalid destination format: {destination_name}"}), 400
+#     destination_coords = get_city_coordinates(destination_name)
+#     if not destination_coords:
+#         return jsonify({"error": f"Destination city not found: {destination_name}"}), 400
+
+#     stops_coords = []
+#     for stop_name in stops_list:
+#         stop_parts = parse_location(stop_name)
+#         if not stop_parts:
+#             return jsonify({"error": f"Invalid stop format: {stop_name}"}), 400
+#         stop_coords = get_city_coordinates(stop_name)
+#         if not stop_coords:
+#             return jsonify({"error": f"Stop city not found: {stop_name}"}), 400
+#         stops_coords.append(stop_coords)
+
+#     # Single-leg or multi-leg logic
+#     if not stops_list:
+#         return handle_single_leg_route(origin_coords, destination_coords, origin_name, destination_name, unit_system)
+#     else:
+#         return handle_multi_leg_route(
+#             origin_coords, destination_coords, stops_coords,
+#             origin_name, destination_name, stops_list, unit_system
+#         )
+
+
 @api_blueprint.route("/driving", methods=["POST"])
 def driving():
     """
     POST /api/v1/driving
-    {
-      "origin": "some place",
-      "stops": ["stop1", "stop2", ...]  // optional or empty
-      "destination": "some other place",
-      "unit_system": "metric" or "imperial" // optional, default "metric"
-    }
-
-    1) If stops is empty (or not present):
-       - Single route call to get_route_data(origin, destination)
-       - Return all alternative routes in a "routes" array.
-
-    2) If stops is non-empty:
-       - Multi-leg approach. For each leg, call get_route_data and retrieve all routes.
-       - Return "legs": [...], each with "routes": array of alternatives.
-       - Summation of total distance/time uses only the first (best) route of each leg.
-
-    Example #1 (no stops, multiple routes):
-    {
-      "origin": "New York City",
-      "destination": "Boston",
-      "unit_system": "imperial"
-    }
-
-    => {
-      "origin": "New York City",
-      "destination": "Boston",
-      "unit_system": "imperial",
-      "code": "Ok",
-      "waypoints": [...],
-      "routes": [
-        {
-          "distance": 214.32,
-          "distance_unit": "miles",
-          "duration_hours": 3,
-          "duration_minutes": 49,
-          "geometry": { "type": "LineString", "coordinates": [...] }
-        },
-        {
-          "distance": 218.75,
-          ...
-        }
-      ]
-    }
-
-    Example #2 (with stops):
-    {
-      "origin": "Houston, TX",
-      "stops": ["New Orleans, LA", "Birmingham, AL"],
-      "destination": "Atlanta, GA",
-      "unit_system": "imperial"
-    }
-
-    => {
-      "origin": "Houston, TX",
-      "stops": ["New Orleans, LA", "Birmingham, AL"],
-      "destination": "Atlanta, GA",
-      "unit_system": "imperial",
-      "legs": [
-        {
-          "from": "Houston, TX",
-          "to": "New Orleans, LA",
-          "routes": [
-            {
-              "distance": 348.73,
-              "distance_unit": "miles",
-              "duration_hours": 5,
-              "duration_minutes": 4,
-              "geometry": {...}
-            },
-            {
-              "distance": 351.2,
-              ...
-            }
-          ],
-          "waypoints": [...]
-        },
-        {
-          "from": "New Orleans, LA",
-          "to": "Birmingham, AL",
-          "routes": [...],
-          "waypoints": [...]
-        },
-        {
-          "from": "Birmingham, AL",
-          "to": "Atlanta, GA",
-          "routes": [...],
-          "waypoints": [...]
-        }
-      ],
-      "total_distance": 850.06,
-      "total_distance_unit": "miles",
-      "total_duration_hours": 12,
-      "total_duration_minutes": 45
-    }
+    Handles driving routes with cities matched from the database.
+    Supports formats like "City", "City, State", or "City, State, Country"
     """
     data = request.get_json() or {}
-    origin_str = data.get("origin")
+    origin_name = data.get("origin")
     stops_list = data.get("stops", [])
-    destination_str = data.get("destination")
+    destination_name = data.get("destination")
     unit_system = data.get("unit_system", "metric")
 
-    if not origin_str or not destination_str:
+    if not origin_name or not destination_name:
         return jsonify({"error": "origin and destination are required"}), 400
 
-    # Geocode origin & destination
-    origin_coords = geocode_address(origin_str)
+    # Fetch and validate cities
+    origin_coords = get_city_coordinates_geonames(origin_name)
     if not origin_coords:
-        return jsonify({"error": f"Unable to geocode origin: {origin_str}"}), 400
+        return jsonify({"error": f"Origin city not found: {origin_name}"}), 400
 
-    destination_coords = geocode_address(destination_str)
+    destination_coords = get_city_coordinates_geonames(destination_name)
     if not destination_coords:
-        return jsonify({"error": f"Unable to geocode destination: {destination_str}"}), 400
+        return jsonify({"error": f"Destination city not found: {destination_name}"}), 400
 
-    # If stops is empty => SINGLE-LEG logic w/ alternatives
-    if not stops_list:
-        # 1. Single OSRM call for origin -> destination
-        route_info = get_route_data(origin_coords, destination_coords)
-        if not route_info or "routes" not in route_info:
-            return jsonify({"error": "No routes found"}), 400
-
-        # 2. Parse all routes
-        routes_out = []
-        for r in route_info["routes"]:
-            dist_m = r["distance"]
-            dur_s  = r["duration"]
-
-            dist_conv, dist_unit = convert_distance(dist_m, unit_system)
-            hrs = int(dur_s // 3600)
-            mins = int((dur_s % 3600) // 60)
-
-            routes_out.append({
-                "distance": dist_conv,
-                "distance_unit": dist_unit,
-                "duration_hours": hrs,
-                "duration_minutes": mins,
-                "geometry": r["geometry"]  # GeoJSON
-            })
-
-        return jsonify({
-            "origin": origin_str,
-            "destination": destination_str,
-            "unit_system": unit_system,
-            "code": route_info.get("code", "NoCode"),
-            "waypoints": route_info.get("waypoints", []),
-            "routes": routes_out
-        }), 200
-
-    # Else => MULTI-LEG logic with stops
-    # 1. Geocode each stop
     stops_coords = []
-    for s_str in stops_list:
-        sc = geocode_address(s_str)
-        if not sc:
-            return jsonify({"error": f"Unable to geocode stop: {s_str}"}), 400
-        stops_coords.append(sc)
+    for stop_name in stops_list:
+        stop_coords = get_city_coordinates_geonames(stop_name)
+        if not stop_coords:
+            return jsonify({"error": f"Stop city not found: {stop_name}"}), 400
+        stops_coords.append(stop_coords)
 
-    # 2. Build the coordinate list
-    all_coords = [origin_coords] + stops_coords + [destination_coords]
-    all_names = [origin_str] + stops_list + [destination_str]
-
-    legs_output = []
-    total_distance_m = 0.0
-    total_duration_s = 0.0
-
-    # 3. For each leg, get routes from OSRM (alternatives=true)
-    #    Summation is from the first (best) route
-    for i in range(len(all_coords) - 1):
-        start_coords = all_coords[i]
-        end_coords   = all_coords[i+1]
-        start_name   = all_names[i]
-        end_name     = all_names[i+1]
-
-        leg_info = get_route_data(start_coords, end_coords)
-        if not leg_info or "routes" not in leg_info:
-            return jsonify({"error": f"No routes found for leg: {start_name} -> {end_name}"}), 400
-
-        # Build "routes": an array of alternatives
-        routes_array = []
-        for route_obj in leg_info["routes"]:
-            dist_m = route_obj["distance"]
-            dur_s  = route_obj["duration"]
-
-            dist_conv, dist_unit = convert_distance(dist_m, unit_system)
-            hrs = int(dur_s // 3600)
-            mins = int((dur_s % 3600) // 60)
-
-            routes_array.append({
-                "distance": dist_conv,
-                "distance_unit": dist_unit,
-                "duration_hours": hrs,
-                "duration_minutes": mins,
-                "geometry": route_obj["geometry"]
-            })
-
-        # The first route is the best route for total distance/duration
-        best = leg_info["routes"][0]
-        total_distance_m += best["distance"]
-        total_duration_s += best["duration"]
-
-        # Add the leg object
-        legs_output.append({
-            "from": start_name,
-            "to": end_name,
-            "routes": routes_array,
-            "waypoints": leg_info.get("waypoints", [])
-        })
-
-    # 4. Summaries
-    total_dist_conv, total_dist_unit = convert_distance(total_distance_m, unit_system)
-    total_hrs = int(total_duration_s // 3600)
-    total_mins = int((total_duration_s % 3600) // 60)
-
-    return jsonify({
-        "origin": origin_str,
-        "stops": stops_list,
-        "destination": destination_str,
-        "unit_system": unit_system,
-        "legs": legs_output,
-        "total_distance": total_dist_conv,
-        "total_distance_unit": total_dist_unit,
-        "total_duration_hours": total_hrs,
-        "total_duration_minutes": total_mins
-    }), 200
-
+    # Single-leg or multi-leg logic
+    if not stops_list:
+        return handle_single_leg_route(origin_coords, destination_coords, origin_name, destination_name, unit_system)
+    else:
+        return handle_multi_leg_route(
+            origin_coords, destination_coords, stops_coords,
+            origin_name, destination_name, stops_list, unit_system
+        )
 
 # ______________________________
 ########### FLIGHT ################
 
-
 @api_blueprint.route("/flight", methods=["POST"])
 def compute_air_distance():
     """
-    POST /api/v1/air-distance
+    POST /api/v1/flight
     Expects JSON body:
     {
-      "origin": "New York City",
-      "destination": "Los Angeles",
+      "origin": "New York City, NY",
+      "destination": "Los Angeles, CA",
       "unit_system": "imperial"  // optional (default = "metric")
     }
 
     Returns JSON:
     {
-      "origin": "New York City",
+      "origin": "New York City, NY",
       "origin_coords": [lat, lon],
-      "destination": "Los Angeles",
+      "destination": "Los Angeles, CA",
       "destination_coords": [lat, lon],
       "unit_system": "imperial",
       "distance": 2469.07,
@@ -276,10 +376,7 @@ def compute_air_distance():
       "notes": "Estimated flight time at 900 km/h"
     }
     """
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Invalid JSON payload"}), 400
-    
+    data = request.get_json() or {}
     origin = data.get("origin")
     destination = data.get("destination")
     unit_system = data.get("unit_system", "metric")
@@ -287,43 +384,48 @@ def compute_air_distance():
     if not origin or not destination:
         return jsonify({"error": "origin and destination are required"}), 400
 
-    # 1. Get air distance + coords
-    air_data = get_air_distance(origin, destination)
-    if air_data is None:
-        return jsonify({"error": "Unable to geocode origin or destination"}), 400
+    # Get coordinates from the database
+    origin_coords = get_city_coordinates_geonames(origin)
+    if not origin_coords:
+        return jsonify({"error": f"Origin city not found: {origin}"}), 400
 
-    distance_meters = air_data["distance_m"]
-    origin_coords = air_data["origin_coords"]         # (lat, lon)
-    destination_coords = air_data["destination_coords"] # (lat, lon)
+    destination_coords = get_city_coordinates_geonames(destination)
+    if not destination_coords:
+        return jsonify({"error": f"Destination city not found: {destination}"}), 400
 
-    # 2. Convert distance
+    # Calculate air distance using Haversine formula
+    distance_meters = haversine_distance(
+        origin_coords[0], origin_coords[1],  # lat, lon
+        destination_coords[0], destination_coords[1]  # lat, lon
+    )
+
+    # Convert distance
     distance_converted, distance_label = convert_distance(distance_meters, unit_system)
 
-    # 3. Estimate flight time
+    # Estimate flight time
     hours, minutes = estimate_flight_time(distance_meters, speed_kmh=900)
 
-    # 4. Build a simple geometry for the line
-    # Note that GeoJSON is usually [lon, lat], so we swap the tuple.
+    # Build GeoJSON geometry (lon, lat order)
     geometry = {
         "type": "LineString",
         "coordinates": [
-            [origin_coords[1], origin_coords[0]],      # [lon, lat]
-            [destination_coords[1], destination_coords[0]]
+            [origin_coords[1], origin_coords[0]],  # [lon, lat]
+            [destination_coords[1], destination_coords[0]]  # [lon, lat]
         ]
     }
 
-    # 5. Return everything as JSON
+    # Return response
     return jsonify({
         "origin": origin,
-        "origin_coords": [origin_coords[0], origin_coords[1]],  # lat, lon
+        "origin_coords": [origin_coords[0], origin_coords[1]],  # [lat, lon]
         "destination": destination,
-        "destination_coords": [destination_coords[0], destination_coords[1]],  # lat, lon
+        "destination_coords": [destination_coords[0], destination_coords[1]],  # [lat, lon]
         "unit_system": unit_system,
         "distance": distance_converted,
         "distance_unit": distance_label,
         "duration_hours": hours,
         "duration_minutes": minutes,
         "geometry": geometry,
-        "notes": "Estimated flight time at 900 km/h"
+        "distance_summary": f"The total distance between {origin} and {destination} is {distance_converted} {distance_label}",
+        "travel_time_summary": f"The estimated travel time between {origin} and {destination} is {hours}h {minutes}m"
     }), 200
-
