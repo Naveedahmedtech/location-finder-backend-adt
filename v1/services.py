@@ -1,9 +1,10 @@
+from flask import jsonify
 import requests
 import math
 from typing import List, Optional, Dict
 from bson import ObjectId
 from pymongo import ReturnDocument
-from db import homepage_texts_collection
+from db import homepage_texts_collection, city_collection
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -77,6 +78,41 @@ def get_route_data(origin_coords, destination_coords):
     except Exception as e:
         # Log error in production
         return None
+
+def process_routes(route_info, unit_system):
+    """
+    Process the raw route data and convert it into a format suitable for the response.
+    This function processes the distance and duration, converts them to the appropriate units,
+    and formats the geometry for the response.
+
+    :param route_info: Raw route data from the route service (OSRM or other).
+    :param unit_system: The unit system for the response ('metric' or 'imperial').
+
+    :return: List of processed routes with distance, duration, and geometry.
+    """
+    routes_out = []
+
+    for r in route_info["routes"]:
+        dist_m = r["distance"]  # Distance in meters
+        dur_s = r["duration"]  # Duration in seconds
+
+        # Convert distance
+        dist_conv, dist_unit = convert_distance(dist_m, unit_system)
+
+        # Convert duration to hours and minutes
+        hrs = int(dur_s // 3600)
+        mins = int((dur_s % 3600) // 60)
+
+        # Add the processed route to the output list
+        routes_out.append({
+            "distance": dist_conv,
+            "distance_unit": dist_unit,
+            "duration_hours": hrs,
+            "duration_minutes": mins,
+            "geometry": r["geometry"]  # GeoJSON geometry
+        })
+
+    return routes_out
 
 def convert_distance(distance_meters, unit_system="metric"):
     """
@@ -375,3 +411,168 @@ def update_document_by_language_and_id(language: str, doc_id: str, update_data: 
 
 ########## About us ###############
 
+def get_city_coordinates(city_name):
+    """
+    Fetches coordinates of a city from MongoDB.
+    :param city_name: Name of the city.
+    :return: Coordinates as (latitude, longitude) or None.
+    """
+    record = city_collection.find_one({"type": "countries_cities"})
+    if not record:
+        return None
+
+    for country in record.get("countries", []):
+        for city in country.get("cities", []):
+            if city["name"].lower() == city_name.lower():
+                return city["latitude"], city["longitude"]
+
+    return None
+
+def handle_single_leg_route(origin_coords, destination_coords, origin_name, destination_name, unit_system):
+    """
+    Handles routing for a single leg without stops.
+    """
+    route_info = get_route_data(origin_coords, destination_coords)
+    if not route_info or "routes" not in route_info:
+        return jsonify({"error": "No routes found"}), 400
+
+    routes_out = []
+    for route in route_info["routes"]:
+        dist_conv, dist_unit = convert_distance(route["distance"], unit_system)
+        hrs = int(route["duration"] // 3600)
+        mins = int((route["duration"] % 3600) // 60)
+
+        routes_out.append({
+            "distance": dist_conv,
+            "distance_unit": dist_unit,
+            "duration_hours": hrs,
+            "duration_minutes": mins,
+            "geometry": route["geometry"],
+            "distance_summary": f"The total distance between {origin_name} and {destination_name} is {dist_conv} {dist_unit}",
+            "travel_time_summary": f"The estimated travel time between {origin_name} and {destination_name} is {hrs}h {mins}m"
+        })
+
+    return jsonify({
+        "origin": origin_name,
+        "destination": destination_name,
+        "unit_system": unit_system,
+        "code": route_info.get("code", "NoCode"),
+        "waypoints": route_info.get("waypoints", []),
+        "routes": routes_out,
+    }), 200
+
+def handle_multi_leg_route(origin_coords, destination_coords, stops_coords, origin_name, destination_name, stops_list, unit_system):
+    """
+    Handles routing for multiple legs with stops.
+    """
+    all_coords = [origin_coords] + stops_coords + [destination_coords]
+    all_names = [origin_name] + stops_list + [destination_name]
+
+    legs_output = []
+    total_distance_m = 0.0
+    total_duration_s = 0.0
+
+    for i in range(len(all_coords) - 1):
+        start_coords = all_coords[i]
+        end_coords = all_coords[i + 1]
+        start_name = all_names[i]
+        end_name = all_names[i + 1]
+
+        leg_info = get_route_data(start_coords, end_coords)
+        if not leg_info or "routes" not in leg_info:
+            return jsonify({"error": f"No routes found for leg: {start_name} -> {end_name}"}), 400
+
+        routes_array = []
+        for route in leg_info["routes"]:
+            dist_conv, dist_unit = convert_distance(route["distance"], unit_system)
+            hrs = int(route["duration"] // 3600)
+            mins = int((route["duration"] % 3600) // 60)
+
+            routes_array.append({
+                "distance": dist_conv,
+                "distance_unit": dist_unit,
+                "duration_hours": hrs,
+                "duration_minutes": mins,
+                "geometry": route["geometry"]
+            })
+
+        best_route = leg_info["routes"][0]
+        total_distance_m += best_route["distance"]
+        total_duration_s += best_route["duration"]
+
+        legs_output.append({
+            "from": start_name,
+            "to": end_name,
+            "routes": routes_array,
+            "waypoints": leg_info.get("waypoints", [])
+        })
+
+    total_dist_conv, total_dist_unit = convert_distance(total_distance_m, unit_system)
+    total_hrs = int(total_duration_s // 3600)
+    total_mins = int((total_duration_s % 3600) // 60)
+
+    return jsonify({
+        "origin": origin_name,
+        "stops": stops_list,
+        "destination": destination_name,
+        "unit_system": unit_system,
+        "legs": legs_output,
+        "total_distance": total_dist_conv,
+        "total_distance_unit": total_dist_unit,
+        "total_duration_hours": total_hrs,
+        "total_duration_minutes": total_mins,
+        "distance_summary": f"The total distance between {origin_name} and {destination_name} is {total_dist_conv} {total_dist_unit}",
+        "travel_time_summary": f"The estimated travel time between {origin_name} and {destination_name} is {total_hrs}h {total_mins}m"
+    }), 200
+
+def get_city_coordinates_geonames(location_str):
+    """
+    Fetch coordinates from the database for a given location string.
+    Handles both country names (returns capital/central city coords) and city names (e.g., "Houston, TX").
+    Returns tuple of (latitude, longitude) or None if not found.
+    """
+    # Parse location string
+    parts = [part.strip() for part in location_str.split(",")]
+    location_name = parts[0].lower()
+    state = parts[1].lower() if len(parts) > 1 else None
+    country = parts[2].lower() if len(parts) > 2 else None
+
+    # Query the database
+    location_data = city_collection.find_one({"type": "countries_cities"})
+    if not location_data or "countries" not in location_data:
+        return None
+
+    # First, try to match as a country
+    for country_data in location_data["countries"]:
+        if country_data["name"].lower() == location_name:
+            # Return coordinates of the first city (e.g., capital or major city)
+            if country_data["cities"]:
+                city = country_data["cities"][0]  # Use first city as representative
+                return (city["latitude"], city["longitude"])
+            return None
+
+    # If not a country, try to match as a city
+    for country_data in location_data["countries"]:
+        # If country is provided in input, check it matches
+        if country and country_data["name"].lower() != country:
+            continue
+
+        for city in country_data["cities"]:
+            if city["name"].lower() == location_name:
+                # If state is provided, verify it matches
+                if state and "state" in city and city["state"].lower() != state:
+                    continue
+                return (city["latitude"], city["longitude"])
+    
+    return None
+
+
+def get_country_coordinates(country_name):
+    """Get centroid coordinates for a country by averaging city coordinates."""
+    cities = city_collection.find({"country": {"$regex": f"^{country_name}$", "$options": "i"}})
+    cities_list = list(cities)
+    if not cities_list:
+        return None
+    avg_lat = sum(city["latitude"] for city in cities_list) / len(cities_list)
+    avg_lon = sum(city["longitude"] for city in cities_list) / len(cities_list)
+    return [avg_lat, avg_lon]
