@@ -527,12 +527,13 @@ def handle_multi_leg_route(origin_coords, destination_coords, stops_coords, orig
 
 def get_city_coordinates_geonames(location_str):
     """
-    Fetch coordinates from the database for a given location string (e.g., "Houston, TX").
+    Fetch coordinates from the database for a given location string.
+    Handles both country names (returns capital/central city coords) and city names (e.g., "Houston, TX").
     Returns tuple of (latitude, longitude) or None if not found.
     """
     # Parse location string
     parts = [part.strip() for part in location_str.split(",")]
-    city_name = parts[0].lower()
+    location_name = parts[0].lower()
     state = parts[1].lower() if len(parts) > 1 else None
     country = parts[2].lower() if len(parts) > 2 else None
 
@@ -541,16 +542,37 @@ def get_city_coordinates_geonames(location_str):
     if not location_data or "countries" not in location_data:
         return None
 
+    # First, try to match as a country
     for country_data in location_data["countries"]:
-        # If country is provided, check it matches
+        if country_data["name"].lower() == location_name:
+            # Return coordinates of the first city (e.g., capital or major city)
+            if country_data["cities"]:
+                city = country_data["cities"][0]  # Use first city as representative
+                return (city["latitude"], city["longitude"])
+            return None
+
+    # If not a country, try to match as a city
+    for country_data in location_data["countries"]:
+        # If country is provided in input, check it matches
         if country and country_data["name"].lower() != country:
             continue
 
         for city in country_data["cities"]:
-            if city["name"].lower() == city_name:
+            if city["name"].lower() == location_name:
                 # If state is provided, verify it matches
                 if state and "state" in city and city["state"].lower() != state:
                     continue
                 return (city["latitude"], city["longitude"])
     
     return None
+
+
+def get_country_coordinates(country_name):
+    """Get centroid coordinates for a country by averaging city coordinates."""
+    cities = city_collection.find({"country": {"$regex": f"^{country_name}$", "$options": "i"}})
+    cities_list = list(cities)
+    if not cities_list:
+        return None
+    avg_lat = sum(city["latitude"] for city in cities_list) / len(cities_list)
+    avg_lon = sum(city["longitude"] for city in cities_list) / len(cities_list)
+    return [avg_lat, avg_lon]

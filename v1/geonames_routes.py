@@ -33,8 +33,9 @@ def get_geonames_data():
     record.pop("_id", None)
     # Extract the list of countries, ensuring _id is excluded
     countries = record.get("countries", [])
+    print(countries)
     country_names = [country.get("name") for country in countries if "name" in country]
-    return jsonify({"Status": "OK","countries": country_names}), 200
+    return jsonify({"Status": "OK","countries": countries}), 200
 
 @geo_blueprint.route("/cities-by-country", methods=["GET"])
 def get_cities_by_country():
