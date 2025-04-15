@@ -1,7 +1,14 @@
 from flask import Blueprint, request, jsonify
-from v1.services import geocode_address, get_air_distance, get_city_coordinates_geonames, convert_distance, estimate_flight_time, get_route_data, handle_multi_leg_route, handle_single_leg_route, haversine_distance
+from v1.services import fetch_city_distances, fetch_country_distances, format_city_distances_response, format_country_distances_response, geocode_address, get_air_distance, get_city_coordinates_geonames, convert_distance, estimate_flight_time, get_route_data, handle_multi_leg_route, handle_single_leg_route, haversine_distance
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 api_blueprint = Blueprint("api/v1", __name__)
+# Create a Blueprint for distance-related APIs
+distance_blueprint = Blueprint("distance", __name__)
 
 @api_blueprint.route("/health", methods=["GET"])
 def health():
@@ -306,3 +313,66 @@ def compute_air_distance():
         "distance_summary": f"The total distance between {origin} and {destination} is {distance_converted} {distance_label}",
         "travel_time_summary": f"The estimated travel time between {origin} and {destination} is {hours}h {minutes}m"
     }), 200
+
+
+# API Endpoints
+@api_blueprint.route("/cities", methods=["GET"])
+def get_city_distances():
+    """
+    GET /distances/cities/<country_name>
+    Retrieves the distances between major cities for the specified country.
+    
+    Args:
+        country_name (str): The name of the country to fetch city distances for.
+    
+    Returns:
+        JSON response with the list of city distances or an error message.
+    """
+    try:
+        # Get the country_name from query parameters
+        country_name = request.args.get("country_name")
+        # Validate the country_name parameter
+        if not country_name:
+            return jsonify({"error": "Missing required query parameter: country_name"}), 400
+        # Fetch the data
+        record = fetch_city_distances(country_name)
+        # Format the response
+        response, status_code = format_city_distances_response(record, country_name)
+        
+        return jsonify(response), status_code
+    
+    except Exception as e:
+        logger.error(f"Error in get_city_distances endpoint for {country_name}: {str(e)}")
+        return jsonify({"error": "An error occurred while fetching city distances"}), 500
+
+@api_blueprint.route("/countries", methods=["GET"])
+def get_country_distances():
+    """
+    GET /distances/countries?country_name=<country_name>
+    Retrieves the distances from the specified country to other countries.
+    
+    Query Parameters:
+        country_name (str): The name of the country to fetch country distances for.
+    
+    Returns:
+        JSON response with the list of country distances or an error message.
+    """
+    try:
+        # Get the country_name from query parameters
+        country_name = request.args.get("country_name")
+        
+        # Validate the country_name parameter
+        if not country_name:
+            return jsonify({"error": "Missing required query parameter: country_name"}), 400
+        
+        # Fetch the data
+        record = fetch_country_distances(country_name)
+        
+        # Format the response
+        response, status_code = format_country_distances_response(record, country_name)
+        
+        return jsonify(response), status_code
+    
+    except Exception as e:
+        logger.error(f"Error in get_country_distances endpoint for {country_name}: {str(e)}")
+        return jsonify({"error": "An error occurred while fetching country distances"}), 500

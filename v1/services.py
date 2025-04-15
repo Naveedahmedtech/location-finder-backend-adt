@@ -4,10 +4,14 @@ import math
 from typing import List, Optional, Dict
 from bson import ObjectId
 from pymongo import ReturnDocument
-from db import homepage_texts_collection, city_collection
+from db import homepage_texts_collection, city_collection, distance_cities_collection, distance_countries_collection
 from datetime import datetime
 from pydantic import BaseModel, Field
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 def geocode_address(address):
     """
     Use Nominatim (OpenStreetMap) to geocode the address.
@@ -576,3 +580,138 @@ def get_country_coordinates(country_name):
     avg_lat = sum(city["latitude"] for city in cities_list) / len(cities_list)
     avg_lon = sum(city["longitude"] for city in cities_list) / len(cities_list)
     return [avg_lat, avg_lon]
+
+# Data Retrieval Functions
+def fetch_city_distances(country_name):
+    """
+    Fetches the city distances for a given country from the distance_cities collection.
+    
+    Args:
+        country_name (str): The name of the country to fetch city distances for.
+    
+    Returns:
+        dict: The record containing city distances, or None if not found.
+    """
+    try:
+        record = distance_cities_collection.find_one({"country": country_name})
+        return record
+    except Exception as e:
+        logger.error(f"Error fetching city distances for {country_name}: {str(e)}")
+        raise
+
+def fetch_country_distances(country_name):
+    """
+    Fetches the country distances for a given country from the distance_countries collection.
+    
+    Args:
+        country_name (str): The name of the country to fetch country distances for.
+    
+    Returns:
+        dict: The record containing country distances, or None if not found.
+    """
+    try:
+        record = distance_countries_collection.find_one({"country": country_name})
+        return record
+    except Exception as e:
+        logger.error(f"Error fetching country distances for {country_name}: {str(e)}")
+        raise
+
+# Response Formatting Functions
+def format_city_distances_response(record, country_name):
+    """
+    Formats the response for city distances API.
+    
+    Args:
+        record (dict): The MongoDB record containing city distances.
+        country_name (str): The name of the country.
+    
+    Returns:
+        tuple: (response dict, HTTP status code)
+    """
+    if not record:
+        return {"error": f"No city distance data found for country: {country_name}"}, 404
+    
+    # Remove MongoDB's _id field
+    record.pop("_id", None)
+    
+    # Extract the distances list
+    distances = record.get("distances", [])
+    if not distances:
+        return {"error": f"No city distances available for country: {country_name}"}, 404
+    # Add the new key to each distance entry
+    for distance in distances:
+        distance["trip_summary"] = f"Distance from {distance['origin_city']} to {distance['destination_city']}"
+    return {
+        "status": "OK",
+        "country": country_name,
+        "distances": distances
+    }, 200
+
+def format_country_distances_response(record, country_name):
+    """
+    Formats the response for country distances API, fixing destination_country and setting trip_summary.
+    
+    Args:
+        record (dict): The MongoDB record containing country distances.
+        country_name (str): The name of the country.
+    
+    Returns:
+        tuple: (response dict, HTTP status code)
+    """
+    if not record:
+        return {"error": f"No country distance data found for country: {country_name}"}, 404
+    
+    # Remove MongoDB's _id field
+    record.pop("_id", None)
+    
+    # Extract the distances list
+    distances = record.get("distances", [])
+    if not distances:
+        return {"error": f"No country distances available for country: {country_name}"}, 404
+    
+    # Modify each distance entry
+    for distance in distances:
+        # Ensure the expected keys exist
+        if "origin_country" not in distance or "destination_country" not in distance:
+            logger.error(f"Missing expected keys in country distance entry for {country_name}: {distance}")
+            continue
+        
+        # Store the original destination_country value (to be used as trip_summary)
+        original_destination = distance.get("destination_country", "")
+        
+        # Extract the origin and destination countries from the original destination_country field
+        if "Distance from" in original_destination and " to " in original_destination:
+            try:
+                parts = original_destination.split(" to ")
+                from_country = parts[0].replace("Distance from ", "").strip()
+                to_country = parts[1].strip()
+                
+                # Determine which country is the origin and which is the destination
+                # Since country_name (e.g., "Pakistan") is the origin_country (input),
+                # the other country is the destination_country
+                if to_country.lower() == country_name.lower():
+                    distance["origin_country"] = country_name
+                    distance["destination_country"] = from_country
+                else:
+                    # If the format is reversed (e.g., "Distance from Pakistan to Andorra"),
+                    # swap the roles
+                    distance["origin_country"] = to_country
+                    distance["destination_country"] = from_country
+            except IndexError:
+                logger.error(f"Failed to parse destination_country for {country_name}: {original_destination}")
+                # Fallback to existing values if parsing fails
+                distance["origin_country"] = country_name
+                distance["destination_country"] = original_destination
+        else:
+            # If the format is unexpected, use the existing destination_country as-is
+            logger.warning(f"Unexpected format for destination_country in {country_name}: {original_destination}")
+            distance["origin_country"] = country_name
+        
+        # Set trip_summary to the original destination_country value
+        distance["trip_summary"] = original_destination
+            
+    return {
+        "status": "OK",
+        "country": country_name,
+        "distances": distances
+    }, 200
